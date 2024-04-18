@@ -1,1 +1,148 @@
+drop table if exists paid_channel_id;
+create temp table paid_channel_id as
+select
+event_date::date as event_date,
+case when acq_channel in ('gdm','gdm_men','gdm_electronics','gdm_home','gdm_makeup','gdm_kids') then 'gdm_paid' --paid
+when acq_channel = 'gdm_unpaid' then 'organic' --organic
+when (acq_channel ilike '%_sh%' or acq_channel = 'rip') then 'organic' --organic
+when acq_channel in ('bdm','bsdm','bing','bdm_unpaid') then 'bing_paid' --paid
+when acq_channel = 'dt' then 'organic' --organic
+when acq_channel = 'na' then 'organic' --organic
+when acq_channel = 'ntr' then 'organic' --organic
+when acq_channel in ('email','pm_em') then 'organic' --organic
+when acq_channel = 'push' then 'organic' --organic
+when acq_channel in ('gsdm','gsdm_posh') then 'paid_search' --paid
+when acq_channel in ('gks','gshm') then 'organic' --organic
+when acq_channel in ('fb_dpa','facebook') then 'facebook_paid' --paid
+else 'Other'
+end as acq_channel_group,visitor_id
+
+from external_spark_tables.referred_visits
+where event_date between '2024-03-06' and '2024-04-06'
+and domain = 'us'
+group by referred_visits.event_date,referred_visits.acq_channel,acq_channel_group,visitor_id
+order by event_date
+;
+
+-- Creating a table with users from paid channel only
+drop table if exists p1;
+create temp table p1 as
+select paid_channel_id.event_date, paid_channel_id.acq_channel_group,visitor_id as visitor
+from paid_channel_id
+where paid_channel_id.acq_channel_group in ('gdm_paid','bing_paid','paid_search','facebook_paid')
+group by paid_channel_id.event_date,paid_channel_id.acq_channel_group,paid_channel_id.visitor_id
+order by paid_channel_id.event_date desc,paid_channel_id.acq_channel_group;
+
+select * from p1 limit 50;
+
+-- Splash Viewers Id
+drop table if exists sp_vi;
+create temp table sp_vi as
+select r.event_date ,r.actor.id as actor
+
+from external_spark_tables.raw_events r
+                                  where r.using.app_type = 'android' and
+                                        r.verb = 'view' and
+                                        --r.on.name in ('intro_join','intro_guest_join') and
+                                        r.direct_object.name = 'splash' and
+                                        r.actor.type in ('visitor','user') and
+                                        r.using.domain = 'us' and
+                                        --r.actor.id is not null and
+                                        r.event_date between '2024-03-06' and '2024-04-06'
+
+
+group by 1,2
+order by 1 desc;
+
+
+select * from sp_vi limit 10 ;
+
+-- Joining the paid and splash users table to find the paid splash viewers
+drop table if exists spl_paid_vi;
+create temp table spl_paid_vi as
+select sp_vi.event_date            as date,
+             p1.acq_channel_group        as acq_channel_group,
+             count(distinct sp_vi.actor) as splash_paid_viewers
+      from sp_vi
+               join p1
+                    on sp_vi.actor = p1.visitor and sp_vi.event_date = p1.event_date
+
+      group by 1, 2
+      order by 1 desc, 3 desc ;
+
+select * from spl_paid_vi order by 1,3 desc;
+
+--Login page view visitors id
+
+drop table if exists lg_vi;
+create temp table lg_vi as
+select r.event_date,r.actor.id as login_viewer from external_spark_tables.raw_events r
+                                  where r.using.app_type = 'android' and
+                                        r.verb = 'view' and
+                                        --r.on.name in ('intro_join','intro_guest_join') and
+                                        r.direct_object.name in ('intro_join','login') and
+                                        r.actor.type in ('visitor','user') and
+                                        r.using.domain = 'us' and
+                                        --r.actor.id is not null and
+                                        r.event_date between '2024-03-06' and '2024-04-06'
+
+group by 1,2
+order by r.event_date desc ;
+
+select * from lg_vi limit 10 ;
+
+-- Joining login views table with the paid visitors table
+drop table if exists lg_paid_vi;
+create temp table lg_paid_vi as
+    select lg_vi.event_date,p1.acq_channel_group,count(distinct lg_vi.login_viewer) as login_page_paid_viewers
+    from lg_vi
+join p1
+on lg_vi.login_viewer = p1.visitor
+group by 1,2
+order by 1 desc ,3 desc;
+
+select * from lg_paid_vi order by 1,3 desc;
+
+--Login Page clickers
+drop table if exists lg_ci;
+create temp table lg_ci as
+select r.event_date,r.actor.id as login_clickers from external_spark_tables.raw_events r
+                                  where  r.using.app_type = 'android' and
+                                        r.verb = 'click' and
+                                        --r.on.name in ('intro_join','intro_guest_join') and
+                                        r.on.name in ('intro_join','login') and
+                                        r.actor.type in ('visitor','user') and
+                                        r.using.domain = 'us' and
+                                        --r.actor.id is not null and
+                                        r.event_date between '2024-03-06' and '2024-04-06'
+
+group by 1,2
+order by r.event_date desc ;
+
+select * from lg_ci limit 10 ;
+
+-- Joining the login clickers table with the paid visitors table
+drop table if exists lg_paid_ci;
+create temp table lg_paid_ci as
+    select lg_ci.event_date,p1.acq_channel_group,count(distinct lg_ci.login_clickers) as login_page_paid_clickers
+    from lg_ci
+join p1
+on lg_ci.login_clickers = p1.visitor
+group by 1,2
+order by 1 desc ,3 desc ;
+
+select * from lg_paid_ci order by 1,3 desc ;
+
+--
+select spl_paid_vi.date ,spl_paid_vi.acq_channel_group,splash_paid_viewers,login_page_paid_viewers
+from spl_paid_vi
+join lg_paid_vi lpv
+on spl_paid_vi.acq_channel_group = lpv.acq_channel_group
+and spl_paid_vi.date = lpv.event_date
+group by 1,2,3,4
+order by 1,3,4 desc
+
+
+
+
 
