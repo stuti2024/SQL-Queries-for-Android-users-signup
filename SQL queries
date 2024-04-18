@@ -1,4 +1,4 @@
--- Categorisation into Paid and Organic users -- 
+-- Categorisation into Paid and Organic users --
 
 drop table if exists paid_vi;
 create temp table paid_vi as
@@ -69,7 +69,7 @@ create temp table spl_paid_vi as
     select sp_vi.event_date,count(distinct sp_vi.actor) as splash_paid_viewers
     from sp_vi
 join p1
-on sp_vi.actor = p1.visitor
+on sp_vi.actor = p1.visitor and sp_vi.event_date = p1.event_date
 group by 1
 order by 1 desc;
 
@@ -101,7 +101,7 @@ create temp table lg_paid_vi as
     select lg_vi.event_date,count(distinct lg_vi.login_viewer) as login_page_paid_viewers
     from lg_vi
 join p1
-on lg_vi.login_viewer = p1.visitor
+on lg_vi.login_viewer = p1.visitor and lg_vi.event_date = p1.event_date
 group by 1
 order by 1 desc ;
 
@@ -134,7 +134,7 @@ create temp table lg_paid_ci as
     select lg_ci.event_date,count(distinct lg_ci.login_clickers) as login_page_paid_clickers
     from lg_ci
 join p1
-on lg_ci.login_clickers = p1.visitor
+on lg_ci.login_clickers = p1.visitor and lg_ci.event_date = p1.event_date
 group by 1
 order by 1 desc ;
 
@@ -175,3 +175,11 @@ on per_lg_paid_vi.date = per_lg_paid_ci.date
 order by 1;
 
 select * from final_paid_vi order by 1 desc;
+
+
+select per_lg_paid_ci.date,per_lg_paid_vi.splash_paid_viewers,per_lg_paid_vi.login_page_paid_viewers,per_lg_paid_ci.login_page_paid_clickers,
+       per_lg_paid_vi.percent_of_login_views,per_lg_paid_ci.percent_of_login_clicks
+from per_lg_paid_ci
+join per_lg_paid_vi on per_lg_paid_vi.date = per_lg_paid_ci.date
+group by 1,2,3,4,5,6
+order by 1 desc,3 desc
